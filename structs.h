@@ -1,5 +1,5 @@
-#ifndef TYPES_H
-#define TYPES_H
+#ifndef STRUCTS_H
+#define STRUCTS_H
 
 #include <cstdint>
 #include <list>
@@ -62,4 +62,4 @@ struct BucketHolder {
     uint32_t spareSpace;
 };
 
-#endif // TYPES_H
+#endif // STRUCTS_H

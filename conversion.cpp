@@ -168,15 +168,23 @@ std::vector<Pixel> reorganizePixels(std::vector<Bucket*>& pic2Buckets,
 
     // Add the shuffled colors to the final image
     std::vector<Pixel> pic1Trans(TOTAL_PIX);
+    // Calculate average error of the final image
+    float averageError = 0;
+    uint32_t averageSize = 0;
     for (uint32_t i = 0; i < bestPic1MapSize; i++) {
 
         auto pic2PixelsIt = pic2Buckets[i]->pixels.begin();
 
         for (Pixel* pS : shuffledCondensedBuckets[i]) {
             
-            pic1Trans[(*(pic2PixelsIt++))->loc] = *pS;
+            pic1Trans[(*pic2PixelsIt)->loc] = *pS;
+
+            averageError += ((errorOfColor(pS->color, (*pic2PixelsIt)->color) - averageError) / ++averageSize);
+
+            pic2PixelsIt++;
         }
     }
+    std::cout << "Average Error of Transformed Image: " << (averageError * 100) << "%\n";
 
     return pic1Trans;
 }

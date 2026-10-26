@@ -19,16 +19,23 @@ void createMpegFile(std::vector<Pixel>& pic1, std::vector<Pixel>& transPic1, con
 
 
     // Calculate how fast each pixel needs to move to get there in time
-    const float PIXEL_VELO       = std::sqrt((WIDTH * WIDTH) + (HEIGHT * HEIGHT)) / CONVERSION_FRAMES;
+    const uint8_t STAGGER_FRAMES = STAGGER_PERCENT * CONVERSION_FRAMES;
+    const float PIXEL_VELO = std::sqrt((WIDTH * WIDTH) + (HEIGHT * HEIGHT)) / (CONVERSION_FRAMES - STAGGER_FRAMES);
 
     std::vector<std::array<float, 2>> velocityMap(TOTAL_PIX);       // For each pixel: 0 of the array is xVelo, 1 of the array is yVelo
-    std::vector<uint8_t> doneFrameMap(TOTAL_PIX);                   // Only used by same velo
+    std::vector<uint8_t> startFrameMap(TOTAL_PIX);
+    std::vector<uint8_t> doneFrameMap(TOTAL_PIX);
+    std::vector<float> movingFramesMap(TOTAL_PIX);
+    std::vector<float> piOver2MovingFramesMap(TOTAL_PIX);
     std::vector<uint32_t> bestPix1Reverse(TOTAL_PIX);               // Takes in pix1 and outputs it's final location
     for (uint32_t i = 0; i < TOTAL_PIX; i++) {
 
         uint32_t initialIndex = transPic1[i].loc;
         uint16_t initialX = initialIndex % WIDTH;
         uint16_t initialY = initialIndex / WIDTH;
+
+        // Staggers pixels so top pixels start motion first
+        startFrameMap[initialIndex] = (STAGGER_FRAMES * (static_cast<float>(initialIndex) / TOTAL_PIX));
 
         uint16_t finalX = i % WIDTH;
         uint16_t finalY = i / WIDTH;
@@ -46,29 +53,42 @@ void createMpegFile(std::vector<Pixel>& pic1, std::vector<Pixel>& transPic1, con
         if (totalDistance == 0) {
             velocityMap[initialIndex][0] = 0;
             velocityMap[initialIndex][1] = 0;
-            doneFrameMap[initialIndex] = 0;
+            movingFramesMap[initialIndex] = 0;
         } else {
             velocityMap[initialIndex][0] = (deltaX / totalDistance) * PIXEL_VELO;
             velocityMap[initialIndex][1] = (deltaY / totalDistance) * PIXEL_VELO;
-            doneFrameMap[initialIndex] = totalDistance / PIXEL_VELO;
+            movingFramesMap[initialIndex] = (totalDistance / PIXEL_VELO);
         }
-        
+        doneFrameMap[initialIndex] = startFrameMap[initialIndex] + movingFramesMap[initialIndex];
+        movingFramesMap[initialIndex] /= 2;     // Divided by 2 for the circle ease in-out calculation
+        piOver2MovingFramesMap[initialIndex] = 1.57 / movingFramesMap[initialIndex];
     }
 
     // Add each moving frame by calculating where each pixel needs to move to
-    std::vector<Pixel> frameBufferPixels = pic1;
+    std::vector<Pixel> frameBufferPixels(TOTAL_PIX);
     for (uint8_t i = 1; i < CONVERSION_FRAMES; i++) {
 
-        // Creates 1 frame by adding each pixel in it's new spot
+        // If a pixel hasn't started moving yet put it on the bottom
+        for (uint32_t j = 0; j < TOTAL_PIX; j++) {
+            if (startFrameMap[j] >= i) { frameBufferPixels[j] = pic1[j]; }
+        }
+        // If a pixel was already in the right spot put it on top of the haven't moved ones
+        for (uint32_t j = 0; j < TOTAL_PIX; j++) {
+            if (doneFrameMap[j] <= i) { frameBufferPixels[bestPix1Reverse[j]] = pic1[j]; }
+        }
+        // Otherwise animate the moving pixels
         for (uint32_t j = 0; j < TOTAL_PIX; j++) {
 
-            // If it's already in the right spot leave it there
-            if (doneFrameMap[j] <= i) {
-                frameBufferPixels[bestPix1Reverse[j]] = pic1[j];
-            } else {
+            // If it's not in the right spot animate it's motion
+            if ((doneFrameMap[j] > i) && (startFrameMap[j] < i)) {
 
-                int32_t newX = std::round((j % WIDTH) + (velocityMap[j][0] * i));
-                int32_t newY = std::round((j / WIDTH) + (velocityMap[j][1] * i));
+                float movingForFrames = i - startFrameMap[j];
+
+                // Follows a circle ease in-out movement pattern
+                float distanceMovedThisFrame = movingFramesMap[j] * (1 - std::cos(piOver2MovingFramesMap[j] * movingForFrames));
+
+                int32_t newX = std::round((j % WIDTH) + (velocityMap[j][0] * distanceMovedThisFrame));
+                int32_t newY = std::round((j / WIDTH) + (velocityMap[j][1] * distanceMovedThisFrame));
 
                 if (newX < 0)               { newX = 0; }
                 else if(newX >= static_cast<int32_t>(WIDTH))  { newX = WIDTH - 1; }
